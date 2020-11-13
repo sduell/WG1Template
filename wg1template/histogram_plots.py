@@ -569,28 +569,57 @@ class DataMCHistogramPlot(HistogramPlot):
 
         y_label = self._get_y_label(False, bin_width, evts_or_cand=ylabel)
         # ax1.legend(loc=0, bbox_to_anchor=(1,1))
-        ax1.set_ylabel(y_label, plot_style.ylabel_pos)
+        ax1.set_ylabel(y_label, plot_style.ylabel_pos, fontsize=8)
 
         if draw_legend:
             if legend_inside:
-                ax1.legend(frameon=False)
+                ax1.legend(frameon=False, fontsize=5)
                 ylims = ax1.get_ylim()
                 ax1.set_ylim(ylims[0], 1.4 * ylims[1])
             else:
-                ax1.legend(frameon=False, bbox_to_anchor=(1, 1))
+                ax1.legend(frameon=False, bbox_to_anchor=(1, 1), fontsize=5)
 
-        ax2.set_ylabel(r"$\frac{\mathrm{Data - MC}}{\mathrm{Data}}$")
-        ax2.set_xlabel(self._variable.x_label, plot_style.xlabel_pos)
-        ax2.set_ylim((-1, 1))
+        #ax2.set_ylabel(r"$\frac{\mathrm{Data - MC}}{\mathrm{Data}}$")
+        #ax2.set_xlabel(self._variable.x_label, plot_style.xlabel_pos)
+        #ax2.set_ylim((-1, 1))
 
-        try:
+        #try:
+        #    uhdata = unp.uarray(hdata, np.sqrt(hdata))
+        #    uhmc = unp.uarray(sum_w, np.sqrt(sum_w2))
+        #    ratio = (uhdata - uhmc) / uhdata
+
+        #    ax2.axhline(y=0, color=plot_style.KITColors.dark_grey, alpha=0.8)
+        #    ax2.errorbar(bin_mids, unp.nominal_values(ratio), yerr=unp.std_devs(ratio),
+                         #ls="", marker=".", color=plot_style.KITColors.kit_black)
+        #except ZeroDivisionError:
+        #    ax2.axhline(y=0, color=plot_style.KITColors.dark_grey, alpha=0.8)
+
+        #plt.subplots_adjust(hspace=0.08)
+        
+        ax2.set_ylabel(r"$\frac{N_{\mathrm{Data}} - N_{\mathrm{MC}}}{\sqrt{\sigma^{2}_{\mathrm{Data}}+\sigma^{2}_{\mathrm{MC}}}}$", fontsize=8) 
+        ax2.set_xlabel(self._variable.x_label, plot_style.xlabel_pos, fontsize=8)
+        
+        try: 
             uhdata = unp.uarray(hdata, np.sqrt(hdata))
-            uhmc = unp.uarray(sum_w, np.sqrt(sum_w2))
-            ratio = (uhdata - uhmc) / uhdata
-
+            uhmc = unp.uarray(sum_w, np.sqrt(sum_w2)) 
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratio = (hdata-sum_w)/np.sqrt(hdata + sum_w2)
+                ratio[ratio == np.inf] = 0 
+                ratio[ratio == -np.inf] = 0
+                ratio = np.nan_to_num(ratio)
+                
+            #Error calculation  
+            ratio_errors = np.full_like(sum_w, 1.)
+        
+            lowratio=-3.0
+            highratio=3.0
+            if(np.amin(ratio)<lowratio):
+                lowratio=np.amin(ratio)-1
+            if(np.amax(ratio)>highratio):
+                highratio=np.amax(ratio)+1
+            ax2.set_ylim(lowratio, highratio)
             ax2.axhline(y=0, color=plot_style.KITColors.dark_grey, alpha=0.8)
-            ax2.errorbar(bin_mids, unp.nominal_values(ratio), yerr=unp.std_devs(ratio),
-                         ls="", marker=".", color=plot_style.KITColors.kit_black)
+            ax2.errorbar(bin_mids, unp.nominal_values(ratio), yerr=ratio_errors, ls="", marker=".", color=plot_style.KITColors.kit_black)
         except ZeroDivisionError:
             ax2.axhline(y=0, color=plot_style.KITColors.dark_grey, alpha=0.8)
 
@@ -602,7 +631,7 @@ def create_hist_ratio_figure():
 
     :return: A maptlotlib.Figure instance and a matplotlib.axes instance.
     """
-    return plt.subplots(2, 1, figsize=(5, 5), dpi=200, sharex=True, gridspec_kw={"height_ratios": [3.5, 1]})
+    return plt.subplots(2, 1, figsize=(5, 5), dpi=300, sharex=True, gridspec_kw={"height_ratios": [3.5, 1]})
 
 
 def create_solo_figure(figsize=(5, 5), dpi=200):
@@ -614,7 +643,7 @@ def add_descriptions_to_plot(ax: plt.axis,
                              luminosity: Union[str, None] = None,
                              additional_info: Union[str, None] = None,
                              ):
-    ax.set_title(experiment, loc="left", fontdict={'size': 16, 'style': 'normal', 'weight': 'bold'})
+    ax.set_title(experiment+'\n', loc="left", fontdict={'size': 10, 'style': 'normal', 'weight': 'bold'})
     ax.set_title(luminosity, loc="right")
     ax.annotate(
         additional_info, (0.02, 0.98), xytext=(4, -4), xycoords='axes fraction',
