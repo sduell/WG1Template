@@ -6,11 +6,15 @@ import itertools
 from collections import defaultdict
 from typing import Tuple, Union
 
+# +
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import binned_statistic
 from uncertainties import unumpy as unp
+
+from scipy.linalg import block_diag
+# -
 
 import wg1template.plot_style as plot_style
 
@@ -158,7 +162,55 @@ class HistComponent:
         self._ls = ls
         self._min = np.amin(data) if len(data) > 0 else +float("inf")
         self._max = np.amax(data) if len(data) > 0 else -float("inf")
+        
+        self._stat_cov=None
+        self._sys_covs=[]
 
+    def set_stat_cov(self, cov):
+        self._stat_cov=cov
+    
+    def add_sys_cov(self, cov):
+        self._sys_covs.append(cov)
+        
+    def _add_cov_mat_up_down(self, hup, hdown):
+        """Helper function. Calculates a covariance matrix from
+        given histogram up and down variations.
+        """
+        cov_mat = get_systematic_cov_mat(
+            self._flat_bin_counts, hup.bin_counts.flatten(), hdown.bin_counts.flatten()
+        )
+        self.add_sys_cov(cov_mat)
+    
+    #adapted from the binfit package
+    def add_gaussian_variation(self, data, var, bin_edges, nominal_weight, new_weight, Nstart=None, Nweights=None , total_weight=None):
+        """Add a new covariance matrix from a given systematic variation
+        of the underlying histogram to the template."""
+        if Nweights==None:
+            Nweights = len([col for col in data.columns if new_weight in col])
+        if total_weight == None:
+            nominal = np.histogram(data[var], bins = bin_edges, weights=data[nominal_weight])[0]
+            bin_counts = np.array([np.histogram(data[var], bins = bin_edges, weights=data['{}_{}'.format(new_weight,i)])[0] for i in range(Nstart, Nweights+Nstart)])
+        else:
+            nominal = np.histogram(data[var], bins = bin_edges, weights=data[total_weight])[0]
+            bin_counts = np.array([np.histogram(data[var], bins = bin_edges, weights=data['{}_{}'.format(new_weight,i)]*data[total_weight]/data[nominal_weight])[0] for i in range(Nstart,Nweights+Nstart)])
+        cov_mat = np.matmul((bin_counts - nominal).T, (bin_counts - nominal))/Nweights
+        self.add_sys_cov(cov_mat)    
+    
+    @property
+    def get_cov_mat(self):
+        cov=self.stat_cov
+        for syscov in self.sys_covs:
+            cov += syscov
+        return cov
+    
+    @property
+    def sys_covs(self):
+        return self._sys_covs
+    
+    @property
+    def stat_cov(self):
+        return self._stat_cov
+        
     @property
     def label(self):
         return self._label
@@ -211,6 +263,11 @@ class HistogramPlot:
         self._bin_edges = None
         self._bin_mids = None
         self._bin_width = None
+        
+        self._cov_mats = list()
+        self._cov = None
+        self._corr = None
+        self._inv_corr = None
 
     def add_component(self,
                       label: str,
@@ -445,6 +502,7 @@ class StackedHistogramPlot(HistogramPlot):
         return ax
 
 
+# +
 class DataMCHistogramPlot(HistogramPlot):
     def __init__(self,
                  variable: HistVariable):
@@ -454,7 +512,11 @@ class DataMCHistogramPlot(HistogramPlot):
         histogramed.
         """
         super().__init__(variable=variable)
-
+        self._stat_cov=None
+        self._global_covs=[]
+        self._global_cov=None
+        self._total_cov=None
+        
     def add_data_component(self,
                            label: str,
                            data: Union[pd.DataFrame, pd.Series, np.ndarray], ):
@@ -523,9 +585,20 @@ class DataMCHistogramPlot(HistogramPlot):
             np.array([binned_statistic(comp.data, comp.weights, statistic="sum", bins=bin_edges)[0] for comp in
                       self._mc_components["MC"]]), axis=0)
 
-        sum_w2 = np.sum(
-            np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
-                      self._mc_components["MC"]]), axis=0)
+        if not self._global_covs:
+            sum_w2 = np.sum(
+                np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
+                          self._mc_components["MC"]]), axis=0)
+        else:
+            mat = np.sum(np.array([comp.get_cov_mat for comp in self._mc_components["MC"]]), axis=0)
+            #mat = np.diag(mat)
+            sum_w2=np.zeros(len(mat))
+            for elem in mat:
+                sum_w2+=elem
+        
+ #       print("normal errors")
+ #       print(np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
+ #                     self._mc_components["MC"]]))
 
         hdata, _ = np.histogram(self._data_component.data, bins=bin_edges)
 
@@ -625,6 +698,145 @@ class DataMCHistogramPlot(HistogramPlot):
 
         plt.subplots_adjust(hspace=0.08)
 
+    def _init_errors(self):
+        """The statistical covariance matrix is initialized as diagonal
+        matrix of the sum of weights squared per bin in the underlying
+        histogram. For empty bins, the error is set to 1e-7. The errors
+        are initialized to be 100% uncorrelated. The relative errors per
+        bin are set to 1e-7 in case of empty bins.
+        """
+        stat_errors_sq = np.copy(self._flat_bin_errors_sq)
+        stat_errors_sq[stat_errors_sq == 0] = 1e-14
+
+        self._cov = np.diag(stat_errors_sq)
+
+        self._cov_mats.append(np.copy(self._cov))
+
+        self._corr = np.diag(np.ones(self._num_bins))
+        self._inv_corr = np.diag(np.ones(self._num_bins))
+
+        self._relative_errors = np.divide(
+            np.sqrt(np.diag(self._cov)),
+            self._flat_bin_counts,
+            out=np.full(self._num_bins, 1e-7),
+            where=self._flat_bin_counts != 0,
+        )
+    
+    def add_variation(self, data, compname, weights_up, weights_down, total_weight=None, nominal_weight=None):
+        """Add a new covariance matrix from a given systematic variation
+        of the underlying histogram to the template."""
+        if (total_weight==None or nominal_weight==None):
+            hup = Hist1d(
+                bins = self.bin_edges(), data=data[self._variable.df_label], weights=data[weights_up]
+            )
+            hdown = Hist1d(
+                bins = self.bin_edges(), data=data[self._variable.df_label], weights=data[weights_down]
+            )
+        else:
+            hup = Hist1d(
+                bins = self.bin_edges(), data=data[self._variable.df_label],
+                weights=data[weights_up]*data[total_weight]/data[nominal_weight]
+            )
+            hdown = Hist1d(
+                bins = self.bin_edges(), data=data[self._variable.df_label],
+                weights=data[weights_down]*data[total_weight]/data[nominal_weight]
+            )
+        
+        for comp in self._mc_components["MC"]:
+            if(compname==comp.label):
+                comp.add_cov_mat_up_down(hup, hdown)
+    
+    def PrintGlobCov(self):
+        print(type(self._global_cov))
+        print(len(self._global_cov))
+        
+    def CalcTotCovMatrix(self):
+        if len(self._global_covs) == 0:
+            cov_mats = [comp.get_cov_mat for comp
+                         in self._mc_components["MC"]] 
+            #print(len(cov_mats[0]))
+            local_cov=block_diag(*cov_mats)
+            self._global_cov=np.matrix(local_cov)
+            #total_corr=cov2corr(global_cov)
+            #self._inv_corr = np.linalg.inv(total_corr)
+        else:
+            cov_mats = [comp.get_cov_mat for comp in self._mc_components["MC"]]
+            #print(len(self._global_covs))
+            global_cov=np.sum(np.array(self._global_covs),axis=0)
+            local_cov= block_diag(*cov_mats)
+            #print(len((global_cov[0])))
+            #print(len(local_cov))
+            global_cov=global_cov*(local_cov==0)
+            self._global_cov=np.matrix(global_cov+local_cov)
+        #print(len(self._total_cov))
+            #total_corr=cov2corr(global_cov+local_cov)
+            #self._inv_corr = np.linalg.inv(total_corr)
+
+    def AddStatCovs(self):
+        bin_edges, bin_mids, bin_width = self._get_bin_edges()
+        for comp in self._mc_components["MC"]:
+            stat_errors_sq = np.histogram(comp.data,bins=bin_edges,weights=comp.weights**2)[0]
+            stat_errors_sq[stat_errors_sq == 0] = 1e-14
+            comp.set_stat_cov(np.diag(stat_errors_sq))
+            
+            
+    def AddGaussianVariations(self, inputdfdict, inkeys, namedict, weight_names, Nstart, Nvar):
+        keys = inkeys
+        #dfs = [inputdfdict[key] for key in keys]
+        #titledict = dict((v,k) for k,v in namedict.items())
+        nominal_weight=weight_names['nominal_weight']
+        total_weight=weight_names['total_weight']
+        new_weight=weight_names['new_weight']
+
+        bin_edges, bin_mids, bin_width = self._get_bin_edges()
+        
+        n = {key : np.histogram(inputdfdict[key][self._variable.df_label],bins=bin_edges,weights=inputdfdict[key][total_weight])[0] for key in keys}
+        #n_errs={key : np.sqrt(np.histogram(inputdfdict[key][self._variable.df_label],bins=bin_edges,weights=inputdfdict[key][total_weight]**2)[0]) for key in keys}
+        
+        #for key in keys:
+        #    for comp in self._mc_components["MC"]:
+        #        stat_errors_sq = np.copy(n_errs[key].flatten())
+        #        stat_errors_sq[stat_errors_sq == 0] = 1e-14
+        #        if(namedict[key]==comp.label):
+        #            comp.set_stat_cov(np.diag(stat_errors_sq))
+        #            #for i in range(Nstart, Nstart+Nvar): ##can add single template covs here later
+        #            #comp.add_global_cov(np.diag(stat_errors_sq))
+        
+#        self.AddStatCovs()
+        
+        #if(self._stat_cov==None):
+        #    self._stat_cov=np.diag(np.concatenate(list(n.values())))
+            
+        #for comp in self._mc_components["MC"]:
+        #    print(comp.stat_cov)
+
+        hnom = np.concatenate(list(n.values()))
+
+        varMatrix=[]
+        
+        #save the single systematic covariance matrices
+        for key in keys:
+            for comp in self._mc_components["MC"]:
+                if(namedict[key]==comp.label):
+                    comp.add_gaussian_variation(inputdfdict[key], self._variable.df_label, bin_edges, nominal_weight, new_weight, Nstart, Nvar, total_weight)
+
+        #create the global covariance matrix
+        for i in range(Nstart, Nstart+Nvar):
+            ntemp = [np.histogram(inputdfdict[key][self._variable.df_label],bins=bin_edges,weights=(inputdfdict[key]['{}_{}'.format(new_weight,i)]*inputdfdict[key][total_weight]/inputdfdict[key][nominal_weight]))[0] for key in keys]
+            row = np.concatenate(ntemp)
+            #print(len(row))
+            varMatrix.append(row)
+            
+        varMatrix=np.array(varMatrix)
+        covMatrix=np.matmul((varMatrix-hnom).T,(varMatrix-hnom))/Nvar
+                
+        #print(len(covMatrix))
+        #print(len(covMatrix[0]))
+        self._global_covs.append(covMatrix)
+        #print(self._global_covs)
+
+
+# -
 
 def create_hist_ratio_figure():
     """Create a matplotlib.Figure for histogram ratio plots.
