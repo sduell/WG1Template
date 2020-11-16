@@ -517,6 +517,8 @@ class DataMCHistogramPlot(HistogramPlot):
         self._global_cov=None
         self._total_cov=None
         
+        self._added_covs=False
+        
     def add_data_component(self,
                            label: str,
                            data: Union[pd.DataFrame, pd.Series, np.ndarray], ):
@@ -585,16 +587,23 @@ class DataMCHistogramPlot(HistogramPlot):
             np.array([binned_statistic(comp.data, comp.weights, statistic="sum", bins=bin_edges)[0] for comp in
                       self._mc_components["MC"]]), axis=0)
 
-        if not self._global_covs:
+        if not self._added_covs:
             sum_w2 = np.sum(
                 np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
                           self._mc_components["MC"]]), axis=0)
         else:
             mat = np.sum(np.array([comp.get_cov_mat for comp in self._mc_components["MC"]]), axis=0)
+            print('total matrix')
+            print(mat)
+            print('diagonal matrix')
+            print(print(np.diag(mat)))
             #mat = np.diag(mat)
             sum_w2=np.zeros(len(mat))
             for elem in mat:
                 sum_w2+=elem
+               
+        print("global cov: \n")
+        print(self._global_cov)
         
  #       print("normal errors")
  #       print(np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
@@ -760,7 +769,7 @@ class DataMCHistogramPlot(HistogramPlot):
             #total_corr=cov2corr(global_cov)
             #self._inv_corr = np.linalg.inv(total_corr)
         else:
-            cov_mats = [comp.get_cov_mat for comp in self._mc_components["MC"]]
+            cov_mats = [comp.stat_cov for comp in self._mc_components["MC"]]
             #print(len(self._global_covs))
             global_cov=np.sum(np.array(self._global_covs),axis=0)
             local_cov= block_diag(*cov_mats)
@@ -771,6 +780,8 @@ class DataMCHistogramPlot(HistogramPlot):
         #print(len(self._total_cov))
             #total_corr=cov2corr(global_cov+local_cov)
             #self._inv_corr = np.linalg.inv(total_corr)
+                    
+        self._added_covs=True
 
     def AddStatCovs(self):
         bin_edges, bin_mids, bin_width = self._get_bin_edges()
@@ -834,8 +845,67 @@ class DataMCHistogramPlot(HistogramPlot):
         #print(len(covMatrix[0]))
         self._global_covs.append(covMatrix)
         #print(self._global_covs)
+        
+        
+    #adapted from Lu Cao's systematics code
+    def AddPIDVariations(self, inputdfdict, inkeys, namedict, weight_names, Nstart, Nvar):
+        keys = inkeys
+        #dfs = [inputdfdict[key] for key in keys]
+        #titledict = dict((v,k) for k,v in namedict.items())
+        nominal_weight=weight_names['nominal_weight']
+        total_weight=weight_names['total_weight']
+        new_weight=weight_names['new_weight']
+        
+        bin_edges, bin_mids, bin_width = self._get_bin_edges()
+        
+        for key in keys:
+            hist_central, _ = np.histogram(inputdfdict[key][self._variable.df_label], bins=bin_edges, 
+                                density=False, weights=inputdfdict[key][total_weight])
+            
+            hist_dict = {}
+            for i in range(Nstart, Nstart+Nvar):
+                hist_dict['{}_{}'.format(new_weight,i)], _ = np.histogram(
+                    inputdfdict[key][self._variable.df_label], bins=bin_edges, density=False,
+                    weights= inputdfdict[key]['{}_{}'.format(new_weight,i)]*inputdfdict[key][total_weight]/inputdfdict[key][nominal_weight])
+        
+            stdv = [] 
+            delta = np.array([])
+        
+            for bin_index in range(0, len(bin_edges)-1):
+                bin_yields = []
+        
+                for w_index in hist_dict.keys():
+                    bin_yields = np.append(bin_yields,hist_dict[w_index][bin_index])
+            
+                bin_delta = hist_central[bin_index] - bin_yields
+                delta = np.append(delta, bin_delta)
+        
+                bin_stdv = np.sqrt((bin_delta * bin_delta).sum()/Nvar)
+                stdv = np.append(stdv, bin_stdv)
+        
+        
+            delta = delta.reshape(len(bin_edges)-1, Nvar)
 
+            r = np.zeros((len(bin_edges)-1, len(bin_edges)-1)) 
+            cov = np.zeros((len(bin_edges)-1, len(bin_edges)-1)) 
+    
+            for x in range(0, len(bin_edges)-1): 
+                for y in range(0, len(bin_edges)-1):    
+                    nom = (delta[x] * delta[y]).sum()
+                    denom = np.sqrt((delta[x] * delta[x]).sum()) * np.sqrt( (delta[y] * delta[y]).sum())
+            
+                    # Pearson correltation coefficient matrix
+                    if denom !=0:
+                        r[x][y] = nom/denom 
+                    # Covariance matrix
+                    cov[x][y] = r[x][y] * stdv[x] * stdv[y]
 
+            for comp in self._mc_components["MC"]:
+                if(namedict[key]==comp.label):
+                    comp.add_sys_cov(cov)
+
+            
+ 
 # -
 
 def create_hist_ratio_figure():
