@@ -593,17 +593,12 @@ class DataMCHistogramPlot(HistogramPlot):
                           self._mc_components["MC"]]), axis=0)
         else:
             mat = np.sum(np.array([comp.get_cov_mat for comp in self._mc_components["MC"]]), axis=0)
-            print('total matrix')
-            print(mat)
-            print('diagonal matrix')
-            print(print(np.diag(mat)))
-            #mat = np.diag(mat)
             sum_w2=np.zeros(len(mat))
             for elem in mat:
                 sum_w2+=elem
                
-        print("global cov: \n")
-        print(self._global_cov)
+ #       print("global cov: \n")
+ #       print(self._global_cov)
         
  #       print("normal errors")
  #       print(np.array([binned_statistic(comp.data, comp.weights ** 2, statistic="sum", bins=bin_edges)[0] for comp in
@@ -755,9 +750,11 @@ class DataMCHistogramPlot(HistogramPlot):
             if(compname==comp.label):
                 comp.add_cov_mat_up_down(hup, hdown)
     
-    def PrintGlobCov(self):
-        print(type(self._global_cov))
-        print(len(self._global_cov))
+    #def PrintGlobCov(self):
+    #    print(type(self._global_cov))
+    #    print(len(self._global_cov))
+    #    print(type(self._global_covs))
+    #    print(len(self._global_covs))
         
     def CalcTotCovMatrix(self):
         if len(self._global_covs) == 0:
@@ -899,13 +896,12 @@ class DataMCHistogramPlot(HistogramPlot):
                         r[x][y] = nom/denom 
                     # Covariance matrix
                     cov[x][y] = r[x][y] * stdv[x] * stdv[y]
-
+                    
             for comp in self._mc_components["MC"]:
                 if(namedict[key]==comp.label):
                     comp.add_sys_cov(cov)
 
-            
- 
+
 # -
 
 def create_hist_ratio_figure():
