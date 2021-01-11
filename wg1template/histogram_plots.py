@@ -687,7 +687,7 @@ class DataMCHistogramPlot(HistogramPlot):
                 log_y: bool = False,
                 lower_plot_mode: str = "ratio",
                 lower_yaxis_range: Union[Tuple[float, float], bool, None] = None,
-                include_systematics: bool = True
+                include_systematics: bool = False
                 ):
         bin_edges, bin_mids, bin_width = self._get_bin_edges()
 
