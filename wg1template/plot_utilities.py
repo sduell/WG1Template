@@ -31,7 +31,7 @@ def export(
         os.makedirs(target_dir)
 
     for file_format in file_formats:
-        fig.savefig(os.path.join(target_dir, f'{filename}{file_format}'), bbox_inches="tight")
+        fig.savefig(os.path.join(target_dir, f'{filename}{file_format}'), bbox_inches="tight", transparent=True)
 
 
 # TODO maybe this should be split into four different functions???
@@ -59,21 +59,21 @@ def add_cut_to_axis(ax: plt.axis,
 
     if cut_left is not None:
         ax.axvspan(x_lim_low, cut_left, facecolor=color, alpha=0.7)
-        ax.axvline(cut_left, color='black', linestyle='dashed', lw=1.5, label='Cut')
+        ax.axvline(cut_left, color='black', linestyle='dashed', alpha=0.7, lw=1.5)
     elif cut_right is not None:
         ax.axvspan(cut_right, x_lim_high, facecolor=color, alpha=0.7)
-        ax.axvline(cut_right, color='black', linestyle='dashed', lw=1.5, label='Cut')
+        ax.axvline(cut_right, color='black', linestyle='dashed', alpha=0.7, lw=1.5)
     elif cut_window is not None:
         ax.axvspan(cut_window[0], cut_window[1], facecolor=color, alpha=0.7)
-        ax.axvline(cut_window[0], color='black', linestyle='dashed', lw=1.5, label='Cut')
-        ax.axvline(cut_window[1], color='black', linestyle='dashed', lw=1.5)
+        ax.axvline(cut_window[0], color='black', linestyle='dashed', alpha=0.7, lw=1.5)
+        ax.axvline(cut_window[1], color='black', linestyle='dashed', alpha=0.7, lw=1.5)
     elif keep_window is not None:
         ax.axvspan(x_lim_low, keep_window[0], facecolor=color, alpha=0.7)
-        ax.axvline(keep_window[0], color='black', linestyle='dashed', lw=1.5, label='Cut')
+        ax.axvline(keep_window[0], color='black', linestyle='dashed', alpha=0.7, lw=1.5)
         ax.axvspan(keep_window[1], x_lim_high, facecolor=color, alpha=0.7)
-        ax.axvline(keep_window[1], color='black', linestyle='dashed', lw=1.5, label='Cut')
+        ax.axvline(keep_window[1], color='black', linestyle='dashed', alpha=0.7, lw=1.5)
 
-    ax.legend(frameon=False, bbox_to_anchor=(1, 1))
+    # ax.legend(frameon=False, bbox_to_anchor=(1, 1))
 
 
 # TODO maybe move the next two function to a more appropriate module
@@ -143,3 +143,44 @@ def get_auto_binning_for_compound_df(
             max_val = tag_binning[2]
 
     return number_of_bins, min_val, max_val
+
+
+def get_auto_ylims(ax: plt.axis,
+                   hMC,
+                   *,
+                   hdata=None,
+                   log_y=False,
+                   yaxis_scale='auto') -> Tuple[Union[int, float], Union[int, float]]:
+    """Return the minimum and maximum values for the y axis. If yaxis_scale is 'auto', get a value such that the
+    histogram stays in bounds of the plot, and the legend does not overlap with the histogram.
+
+    """
+
+    ylims = ax.get_ylim()
+    ymin = ylims[0]
+
+    if yaxis_scale == 'auto':
+        if not isinstance(hMC[0], float):
+            hMC = hMC[-1]
+
+        labelFraction = 1/4
+        legendFraction = 1/3
+
+        maxBelowLabel = max(hMC[:len(hMC)*2//3])
+        maxBelowLegend = max(hMC[len(hMC)*2//3:])
+        if hdata is not None:
+            maxBelowLabel = max(maxBelowLabel, max(hdata[:len(hdata)*2//3]))
+            maxBelowLegend = max(maxBelowLegend, max(hdata[len(hdata)*2//3:]))
+
+        if log_y:
+            ymax = max(maxBelowLabel**(1/(1-labelFraction)), maxBelowLegend**(1/(1-legendFraction)))
+        else:
+            ymax = max(maxBelowLabel/(1-labelFraction), maxBelowLegend/(1-legendFraction))
+    else:
+        if log_y:
+            ymax = ylims[1] ** yaxis_scale
+        else:
+            ymax = ylims[1] * yaxis_scale
+
+
+    return ymin, ymax

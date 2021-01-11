@@ -92,30 +92,31 @@ class TangoColors(object):
     ]
 
 
-# these variables can be given as arguments to matplotlib
-# set_x/y_label functions in order to align the text to
-# end of the axes
-xlabel_pos = OrderedDict([('x', 1), ('ha', 'right')])
-ylabel_pos = OrderedDict([('y', 1), ('ha', 'right')])
+# You can edit these two global variable to adjust where on the axes the labels are displayed.
+xlabel_pos = {}
+ylabel_pos = {}
 
 kit_color_cycler = cycler("color", KITColors.default_colors)
 tango_color_cycler = cycler("color", TangoColors.default_colors)
 
 
-def set_matplotlibrc_params():
+def set_matplotlibrc_params(
+    errorbar_caps=False,
+    top_right_ticks=False,
+):
     """
     Sets default parameters in the matplotlibrc.
     :return: None
     """
     xtick = {
-        'top': True,
+        'top': top_right_ticks,
         'minor.visible': True,
         'direction': 'in',
         'labelsize': 10
     }
 
     ytick = {
-        'right': True,
+        'right': top_right_ticks,
         'minor.visible': True,
         'direction': 'in',
         'labelsize': 10
@@ -136,7 +137,7 @@ def set_matplotlibrc_params():
         'frameon': False
     }
     errorbar = {
-        'capsize': 2
+        'capsize': 2 if errorbar_caps else 0
     }
 
     plt.rc('lines', **lines)
