@@ -720,8 +720,11 @@ class DataMCHistogramPlot(HistogramPlot):
             # b1 = sum(i over comps){b1_ci^2 (stat+sys)} + sum(i over comps, j over bins){cov(b1_ci,bj_ci)} ...
             #  + sum(i over comps, j over bins){cov(b1_c1, bj_ci)} + sum(i over comps, j over bins, k over other comps){cov(b1_ci, bj_ck)}
             # much clearer with a drawing... equ. to DelC^2 = DelA^2 + DelB^2 + 2*Cov(A,B)
+            
+            #mat = np.sum(np.concatenate([np.vsplit(column, len(self._mc_components["MC"])) for column in np.hsplit(self._total_cov, len(self._mc_components["MC"]))]), axis=0)
+            #sum_w2=np.sum(mat, axis=1)
             mat = np.sum(np.concatenate([np.vsplit(column, len(self._mc_components["MC"])) for column in np.hsplit(self._total_cov, len(self._mc_components["MC"]))]), axis=0)
-            sum_w2=np.sum(mat, axis=1)
+            sum_w2=np.diag(mat)
             
         hdata, _ = np.histogram(self._data_component._data, bins=bin_edges)
 
@@ -978,7 +981,7 @@ class DataMCHistogramPlot(HistogramPlot):
         keys = inkeys
         total_weight=weightdict['total_weight'] # dataframe name of the total weight
         nominal_weight=weightdict['nominal_weight'] # dataframe name of the nominal weight of the uncertainty
-        gaussian_base=weightdict['gaussian_basename'] # basename of the gaussian error in the dataframe.
+        gaussian_base=weightdict['new_weight'] # basename of the gaussian variations in the dataframe.
         # It's assumed that they are further distinguished by a number (from Nstart to Nvar) divided with an underscore
 
         bin_edges, _, _ = self._get_bin_edges()
