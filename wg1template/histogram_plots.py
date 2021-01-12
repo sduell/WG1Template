@@ -685,7 +685,7 @@ class DataMCHistogramPlot(HistogramPlot):
                 sort_components: bool = True,
                 categorical: bool = False,
                 log_y: bool = False,
-                lower_plot_mode: str = "ratio",
+                lower_plot_mode: str = "residuals",
                 lower_yaxis_range: Union[Tuple[float, float], bool, None] = None,
                 include_systematics: bool = False
                 ):
@@ -782,7 +782,7 @@ class DataMCHistogramPlot(HistogramPlot):
 
         if draw_legend:
             if legend_inside:
-                ax1.legend(frameon=False, loc = 'upper right', fontsize='x-small')
+                ax1.legend(frameon=False, loc = 'upper right', fontsize='x-small', prop={"size":7})
                 ymin, ymax = get_auto_ylims(ax1, hMC, hdata=hdata, log_y=log_y, yaxis_scale=yaxis_scale)
                 ax1.set_ylim(ymin, ymax)
             else:
@@ -1261,7 +1261,7 @@ def create_hist_ratio_figure():
 
     :return: A maptlotlib.Figure instance and a matplotlib.axes instance.
     """
-    return plt.subplots(2, 1, figsize=(5, 5), dpi=200, sharex=True, gridspec_kw={"height_ratios": [3.5, 1]})
+    return plt.subplots(2, 1, figsize=(5, 5), dpi=300, sharex=True, gridspec_kw={"height_ratios": [3.5, 1]})
 
 
 def create_solo_figure(figsize=(5, 5), dpi=200):
